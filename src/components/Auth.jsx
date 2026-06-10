@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { CircleUserRound, LockKeyhole, Mail, UserPlus } from 'lucide-react';
-import { authMessage, signIn, signUp } from '../authClient.js';
+import { CircleUserRound, LockKeyhole, Mail, UserPlus, ArrowLeft } from 'lucide-react';
+import { authMessage, requestPasswordReset, signIn, signUp } from '../authClient.js';
 
 export default function Auth({ initialError = '', onAuthenticated }) {
-  const [mode, setMode] = useState('signin');
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -27,6 +27,9 @@ export default function Auth({ initialError = '', onAuthenticated }) {
           setInfo('Check your email to confirm the account, then sign in.');
           setMode('signin');
         }
+      } else if (mode === 'forgot') {
+        await requestPasswordReset(email.trim());
+        setInfo('Reset link sent. Check your email and click the link to choose a new password.');
       } else {
         onAuthenticated(await signIn(email, password));
       }
@@ -37,18 +40,35 @@ export default function Auth({ initialError = '', onAuthenticated }) {
     }
   };
 
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+    setInfo('');
+  };
+
   return (
     <main className="auth-screen">
       <section className="auth-card">
         <div className="brand auth-brand"><span className="badge">26</span> World Cup Pick'em</div>
-        <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
-          <button className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')} type="button">
-            <LockKeyhole size={16} /> Sign in
-          </button>
-          <button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')} type="button">
-            <UserPlus size={16} /> Sign up
-          </button>
-        </div>
+
+        {mode !== 'forgot' && (
+          <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
+            <button className={mode === 'signin' ? 'active' : ''} onClick={() => switchMode('signin')} type="button">
+              <LockKeyhole size={16} /> Sign in
+            </button>
+            <button className={mode === 'signup' ? 'active' : ''} onClick={() => switchMode('signup')} type="button">
+              <UserPlus size={16} /> Sign up
+            </button>
+          </div>
+        )}
+
+        {mode === 'forgot' && (
+          <div className="auth-tabs" role="tablist" aria-label="Reset password">
+            <button className="active" type="button">
+              <Mail size={16} /> Reset password
+            </button>
+          </div>
+        )}
 
         <form onSubmit={submit} className="auth-form">
           {mode === 'signup' && (
@@ -80,26 +100,39 @@ export default function Auth({ initialError = '', onAuthenticated }) {
               />
             </span>
           </label>
-          <label>
-            Password
-            <span className="input-wrap">
-              <LockKeyhole size={18} />
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                required
-                minLength={6}
-              />
-            </span>
-          </label>
+          {mode !== 'forgot' && (
+            <label>
+              Password
+              <span className="input-wrap">
+                <LockKeyhole size={18} />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  required
+                  minLength={6}
+                />
+              </span>
+            </label>
+          )}
           {error && <div className="notice error">{error}</div>}
           {info && <div className="notice ok">{info}</div>}
           <button className="primary action-button" disabled={busy} type="submit">
-            {mode === 'signup' ? <UserPlus size={17} /> : <LockKeyhole size={17} />}
-            {busy ? 'Working...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            {mode === 'signup' ? <UserPlus size={17} /> : mode === 'forgot' ? <Mail size={17} /> : <LockKeyhole size={17} />}
+            {busy ? 'Working...' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
           </button>
+
+          {mode === 'signin' && (
+            <button className="auth-link" type="button" onClick={() => switchMode('forgot')}>
+              Forgot password?
+            </button>
+          )}
+          {mode === 'forgot' && (
+            <button className="auth-link" type="button" onClick={() => switchMode('signin')}>
+              <ArrowLeft size={14} /> Back to sign in
+            </button>
+          )}
         </form>
       </section>
     </main>

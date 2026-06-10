@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { fetchState, savePick, saveRoundPoints, syncScores } from './api.js';
 import { authMessage, initializeIdentity, signOut, subscribeToIdentity } from './authClient.js';
 import { supabase } from './supabaseClient.js';
@@ -9,13 +9,19 @@ import Schedule from './components/Schedule.jsx';
 import Picks from './components/Picks.jsx';
 import Leaderboard from './components/Leaderboard.jsx';
 import Admin from './components/Admin.jsx';
+import ResetPassword from './components/ResetPassword.jsx';
 
 export default function App() {
+  const location = useLocation();
   const [user, setUser] = useState(undefined);
   const [state, setState] = useState(null);
   const [loadingState, setLoadingState] = useState(false);
   const [busyMatch, setBusyMatch] = useState('');
   const [error, setError] = useState('');
+
+  // The password-reset URL must render regardless of auth state — supabase-js processes
+  // the link's hash and creates a recovery session, but the user may not be set yet.
+  if (location.pathname === '/reset-password') return <ResetPassword />;
 
   useEffect(() => {
     let mounted = true;

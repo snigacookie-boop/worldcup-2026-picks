@@ -694,3 +694,25 @@ input:focus {
   justify-content: center;
   gap: 6px;
 }
+
+/* ---------- Auth: forgot-password text link ---------- */
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  padding: 6px 0;
+  min-height: 0;
+  color: var(--pitch);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  align-self: center;
+}
+.auth-link:hover {
+  color: var(--green);
+  box-shadow: none;
+}
