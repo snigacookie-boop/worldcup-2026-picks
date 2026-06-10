@@ -1,5 +1,7 @@
 # World Cup 2026 Pick'em
 
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/snigacookie-boop/worldcup-2026-picks)
+
 A browser-based pick'em tournament for the FIFA World Cup 2026.
 
 - **Frontend:** React + Vite, deployed on Netlify.
