@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# SPA fallback so direct hits to /picks, /admin etc. serve index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# football-data.org free tier is 10 req/min, no daily cap. Sync every 10 minutes during the tournament.
+[functions."sync-scores"]
+  schedule = "*/10 * * * *"
