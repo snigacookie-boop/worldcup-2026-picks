@@ -12,6 +12,7 @@
   to = "/index.html"
   status = 200
 
-# football-data.org free tier is 10 req/min, no daily cap. Sync every 10 minutes during the tournament.
+# Sync once a day at 08:00 UTC (1am PT / 4am ET) — after every match anywhere in the
+# US/MX/CA hosts has finished. Admin can also hit "Sync scores" on the Admin tab anytime.
 [functions."sync-scores"]
-  schedule = "*/10 * * * *"
+  schedule = "0 8 * * *"
