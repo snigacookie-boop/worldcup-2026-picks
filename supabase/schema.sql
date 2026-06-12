@@ -274,8 +274,12 @@ grant select on public.leaderboard to authenticated;
 
 -- =============== REALTIME ===============
 -- Tell Postgres replication to publish row changes for the tables the UI subscribes to.
-alter publication supabase_realtime add table public.matches;
-alter publication supabase_realtime add table public.picks;
-alter publication supabase_realtime add table public.rounds;
-alter publication supabase_realtime add table public.bonus_questions;
-alter publication supabase_realtime add table public.bonus_answers;
+-- Idempotent: each ALTER is wrapped to swallow "already member of publication" errors so re-runs succeed.
+do $$
+begin
+  begin alter publication supabase_realtime add table public.matches;         exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.picks;           exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.rounds;          exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.bonus_questions; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.bonus_answers;   exception when duplicate_object then null; end;
+end $$;
