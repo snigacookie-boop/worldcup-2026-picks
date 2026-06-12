@@ -161,19 +161,110 @@ create policy "picks_admin_write" on public.picks for all
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
   with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
--- =============== LEADERBOARD VIEW ===============
-create or replace view public.leaderboard as
+-- =============== BONUS QUESTIONS ===============
+-- Players answer once at the start of the tournament (winner, top scorer, etc.).
+-- Each question has its own lock_at; default seeds use 2026-06-27 (start of R32 / knockout rounds).
+create table if not exists public.bonus_questions (
+  id text primary key,
+  prompt text not null,
+  options jsonb,                          -- array of allowed answers, or null for free text
+  points integer not null default 5,
+  lock_at timestamptz,                    -- after this point, only admin can change answers
+  correct_answer text,                    -- admin sets after the tournament ends
+  display_order integer not null default 0
+);
+
+create table if not exists public.bonus_answers (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  question_id text not null references public.bonus_questions(id) on delete cascade,
+  answer text not null,
+  updated_at timestamptz not null default now(),
+  unique (user_id, question_id)
+);
+
+-- Seed three default questions. Lock at the kickoff of the first knockout match (R32 starts 2026-06-27).
+insert into public.bonus_questions (id, prompt, points, lock_at, display_order) values
+  ('winner',     'Who will win the World Cup?',                                       15, '2026-06-27T00:00:00Z', 10),
+  ('topscorer',  'Tournament top goal scorer (player name)',                          10, '2026-06-27T00:00:00Z', 20),
+  ('darkhorse',  'Dark horse — which non-favorite team reaches the semi-finals?',     8,  '2026-06-27T00:00:00Z', 30)
+on conflict (id) do nothing;
+
+alter table public.bonus_questions enable row level security;
+alter table public.bonus_answers   enable row level security;
+
+drop policy if exists "bq_read"        on public.bonus_questions;
+create policy "bq_read" on public.bonus_questions for select to authenticated using (true);
+drop policy if exists "bq_admin_write" on public.bonus_questions;
+create policy "bq_admin_write" on public.bonus_questions for all to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true));
+
+drop policy if exists "ba_read"        on public.bonus_answers;
+create policy "ba_read" on public.bonus_answers for select to authenticated using (true);
+drop policy if exists "ba_self_write"  on public.bonus_answers;
+create policy "ba_self_write" on public.bonus_answers for all to authenticated
+  using (
+    auth.uid() = user_id
+    and exists (select 1 from public.bonus_questions q where q.id = question_id and (q.lock_at is null or q.lock_at > now()))
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.bonus_questions q where q.id = question_id and (q.lock_at is null or q.lock_at > now()))
+  );
+drop policy if exists "ba_admin_write" on public.bonus_answers;
+create policy "ba_admin_write" on public.bonus_answers for all to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true));
+
+-- =============== MATCH PICK COUNTS (pool consensus) ===============
+-- The Schedule UI renders these as "60% picked MEX" once a match is locked.
+create or replace view public.match_pick_counts as
 select
-  p.id as user_id,
-  p.username,
-  coalesce(sum(case when pk.pick = m.winner then r.points_per_correct else 0 end), 0)::int as points,
-  count(pk.id) filter (where m.winner is not null) as picks_settled,
-  count(pk.id) as picks_made
-from public.profiles p
-left join public.picks pk on pk.user_id = p.id
-left join public.matches m on m.id = pk.match_id
-left join public.rounds r on r.id = m.round_id
-group by p.id, p.username
+  m.id as match_id,
+  count(*) filter (where pk.pick = 'HOME')::int as home_count,
+  count(*) filter (where pk.pick = 'DRAW')::int as draw_count,
+  count(*) filter (where pk.pick = 'AWAY')::int as away_count,
+  count(pk.id)::int as total
+from public.matches m
+left join public.picks pk on pk.match_id = m.id
+group by m.id;
+
+grant select on public.match_pick_counts to authenticated;
+
+-- =============== LEADERBOARD VIEW (picks + bonus combined) ===============
+create or replace view public.leaderboard as
+with pick_totals as (
+  select
+    p.id as user_id,
+    p.username,
+    coalesce(sum(case when pk.pick = m.winner then r.points_per_correct else 0 end), 0)::int as pick_points,
+    count(pk.id) filter (where m.winner is not null)::int as picks_settled,
+    count(pk.id)::int as picks_made
+  from public.profiles p
+  left join public.picks pk on pk.user_id = p.id
+  left join public.matches m on m.id = pk.match_id
+  left join public.rounds r on r.id = m.round_id
+  group by p.id, p.username
+),
+bonus_totals as (
+  select
+    ba.user_id,
+    coalesce(sum(case when ba.answer = bq.correct_answer then bq.points else 0 end), 0)::int as bonus_points
+  from public.bonus_answers ba
+  join public.bonus_questions bq on bq.id = ba.question_id
+  group by ba.user_id
+)
+select
+  pt.user_id,
+  pt.username,
+  (pt.pick_points + coalesce(bt.bonus_points, 0))::int as points,
+  pt.picks_settled,
+  pt.picks_made,
+  pt.pick_points,
+  coalesce(bt.bonus_points, 0)::int as bonus_points
+from pick_totals pt
+left join bonus_totals bt on bt.user_id = pt.user_id
 order by points desc;
 
 grant select on public.leaderboard to authenticated;
@@ -183,3 +274,5 @@ grant select on public.leaderboard to authenticated;
 alter publication supabase_realtime add table public.matches;
 alter publication supabase_realtime add table public.picks;
 alter publication supabase_realtime add table public.rounds;
+alter publication supabase_realtime add table public.bonus_questions;
+alter publication supabase_realtime add table public.bonus_answers;

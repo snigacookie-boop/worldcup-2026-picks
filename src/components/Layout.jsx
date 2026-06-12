@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { CalendarDays, ListChecks, LogOut, RefreshCw, Settings, Trophy } from 'lucide-react';
+import { CalendarDays, ListChecks, LogOut, RefreshCw, Settings, Sparkles, Trophy } from 'lucide-react';
 
 export default function Layout({ state, loading, rank, onRefresh, onSignOut, children }) {
   const profile = state?.profile;
@@ -13,6 +13,7 @@ export default function Layout({ state, loading, rank, onRefresh, onSignOut, chi
         <nav className="nav" aria-label="Primary navigation">
           <NavLink to="/schedule" className={linkClass}><CalendarDays size={17} /> Schedule</NavLink>
           <NavLink to="/picks" className={linkClass}><ListChecks size={17} /> My Picks</NavLink>
+          <NavLink to="/bonus" className={linkClass}><Sparkles size={17} /> Bonus</NavLink>
           <NavLink to="/leaderboard" className={linkClass}><Trophy size={17} /> Standings</NavLink>
           {profile?.isAdmin && <NavLink to="/admin" className={linkClass}><Settings size={17} /> Admin</NavLink>}
         </nav>

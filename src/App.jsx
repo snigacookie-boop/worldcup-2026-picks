@@ -9,6 +9,7 @@ import Schedule from './components/Schedule.jsx';
 import Picks from './components/Picks.jsx';
 import Leaderboard from './components/Leaderboard.jsx';
 import Admin from './components/Admin.jsx';
+import Bonus from './components/Bonus.jsx';
 import ResetPassword from './components/ResetPassword.jsx';
 
 export default function App() {
@@ -143,6 +144,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/schedule" replace />} />
           <Route path="/schedule" element={<Schedule state={state} />} />
           <Route path="/picks" element={<Picks state={state} busyMatch={busyMatch} onPick={onPick} />} />
+          <Route path="/bonus" element={<Bonus state={state} onSaved={() => loadState(true)} />} />
           <Route path="/leaderboard" element={<Leaderboard state={state} />} />
           {state?.profile?.isAdmin && (
             <Route

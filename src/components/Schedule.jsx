@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Clock, MapPin, Goal } from 'lucide-react';
-import { fmtKickoff, groupByRound, roundById } from '../lib/format.js';
+import { Clock, MapPin, Goal, Users } from 'lucide-react';
+import { fmtKickoff, groupByRound, isLocked, roundById } from '../lib/format.js';
 import { flagUrl, flagSrcSet } from '../lib/flags.js';
 
 export default function Schedule({ state }) {
   const [filter, setFilter] = useState('ALL');
   const rounds = state?.rounds || [];
   const matches = state?.matches || [];
+  const pickCounts = state?.pickCounts || {};
   const filtered = useMemo(() => {
     if (filter === 'ALL') return matches;
     if (filter === 'OPEN') return matches.filter((match) => match.status === 'SCHEDULED' && new Date(match.kickoff) > new Date());
@@ -41,7 +42,7 @@ export default function Schedule({ state }) {
             </div>
             <div className="match-list">
               {roundMatches.map((match) => (
-                <MatchRow key={match.id} match={match} round={roundById(rounds)[match.roundId]} />
+                <MatchRow key={match.id} match={match} round={roundById(rounds)[match.roundId]} pickCounts={pickCounts[match.id]} />
               ))}
             </div>
           </section>
@@ -51,12 +52,14 @@ export default function Schedule({ state }) {
   );
 }
 
-function MatchRow({ match, round }) {
+function MatchRow({ match, round, pickCounts }) {
   const showScore = match.status === 'LIVE' || match.status === 'FINISHED';
   const venue = [match.venue, match.city].filter(Boolean).join(', ');
   const goals = Array.isArray(match.goals) ? match.goals : [];
   const homeGoals = goals.filter((g) => g.team === 'HOME');
   const awayGoals = goals.filter((g) => g.team === 'AWAY');
+  // Only reveal pool consensus once picks are locked, so the % doesn't influence open picks.
+  const showConsensus = isLocked(match) && pickCounts && pickCounts.total > 0;
 
   return (
     <article className="match-row">
@@ -81,7 +84,37 @@ function MatchRow({ match, round }) {
           <ScorerList side="right" goals={awayGoals} />
         </div>
       )}
+      {showConsensus && (
+        <PoolConsensus match={match} counts={pickCounts} />
+      )}
     </article>
+  );
+}
+
+function PoolConsensus({ match, counts }) {
+  const { home, draw, away, total } = counts;
+  const pct = (n) => Math.round((n / total) * 100);
+  const segments = [
+    { key: 'HOME', label: match.homeCode || 'H', value: home, color: '#13834b' },
+    { key: 'DRAW', label: 'Draw',                 value: draw, color: '#c7952d' },
+    { key: 'AWAY', label: match.awayCode || 'A', value: away, color: '#bd1f2d' },
+  ];
+  return (
+    <div className="consensus">
+      <div className="consensus-label"><Users size={13} /> Pool picked ({total})</div>
+      <div className="consensus-bar">
+        {segments.map((s) => (
+          <div
+            key={s.key}
+            className={`consensus-seg ${s.key === match.winner ? 'win' : ''}`}
+            style={{ width: `${(s.value / total) * 100}%`, background: s.color }}
+            title={`${s.label}: ${s.value} (${pct(s.value)}%)`}
+          >
+            {s.value > 0 && pct(s.value) >= 12 ? `${s.label} ${pct(s.value)}%` : ''}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

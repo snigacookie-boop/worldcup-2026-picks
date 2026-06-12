@@ -78,6 +78,36 @@ async function getLeaderboard() {
   return (data || []).map(camelLeaderRow);
 }
 
+async function getMatchPickCounts() {
+  const { data, error } = await supabase.from('match_pick_counts').select('*');
+  if (error) throw error;
+  // Map matchId -> { home, draw, away, total }
+  return Object.fromEntries((data || []).map((r) => [r.match_id, {
+    home: r.home_count, draw: r.draw_count, away: r.away_count, total: r.total,
+  }]));
+}
+
+async function getBonusQuestions() {
+  const { data, error } = await supabase.from('bonus_questions').select('*').order('display_order');
+  if (error) throw error;
+  return (data || []).map((q) => ({
+    id: q.id,
+    prompt: q.prompt,
+    options: Array.isArray(q.options) ? q.options : null,
+    points: q.points,
+    lockAt: q.lock_at,
+    correctAnswer: q.correct_answer,
+    displayOrder: q.display_order,
+  }));
+}
+
+async function getMyBonusAnswers(userId) {
+  const { data, error } = await supabase.from('bonus_answers')
+    .select('question_id, answer').eq('user_id', userId);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.question_id, r.answer]));
+}
+
 function summarize(matches) {
   const now = Date.now();
   return {
@@ -95,12 +125,15 @@ export async function fetchState() {
     err.status = 401;
     throw err;
   }
-  const [profile, rounds, matches, picks, leaderboard] = await Promise.all([
+  const [profile, rounds, matches, picks, leaderboard, pickCounts, bonusQuestions, bonusAnswers] = await Promise.all([
     getProfile(user.id),
     getRounds(),
     getMatches(),
     getMyPicks(user.id),
     getLeaderboard(),
+    getMatchPickCounts(),
+    getBonusQuestions(),
+    getMyBonusAnswers(user.id),
   ]);
   return {
     profile,
@@ -108,9 +141,43 @@ export async function fetchState() {
     matches,
     picks,
     leaderboard,
+    pickCounts,
+    bonusQuestions,
+    bonusAnswers,
     totals: summarize(matches),
     syncedAt: new Date().toISOString(),
   };
+}
+
+export async function saveBonusAnswer(questionId, answer) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { const e = new Error('Not signed in'); e.status = 401; throw e; }
+  const { error } = await supabase.from('bonus_answers').upsert(
+    { user_id: user.id, question_id: questionId, answer, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,question_id' },
+  );
+  if (error) throw error;
+  return fetchState();
+}
+
+export async function adminSaveBonusQuestion(q) {
+  // q: { id, prompt, options, points, lockAt, correctAnswer, displayOrder }
+  const row = {
+    id: q.id,
+    prompt: q.prompt,
+    options: q.options || null,
+    points: Number(q.points) || 0,
+    lock_at: q.lockAt || null,
+    correct_answer: q.correctAnswer || null,
+    display_order: Number(q.displayOrder) || 0,
+  };
+  const { error } = await supabase.from('bonus_questions').upsert(row, { onConflict: 'id' });
+  if (error) throw error;
+}
+
+export async function adminDeleteBonusQuestion(id) {
+  const { error } = await supabase.from('bonus_questions').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function savePick(matchId, pick) {

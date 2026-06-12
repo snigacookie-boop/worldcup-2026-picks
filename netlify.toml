@@ -16,3 +16,8 @@
 # US/MX/CA hosts has finished. Admin can also hit "Sync scores" on the Admin tab anytime.
 [functions."sync-scores"]
   schedule = "0 8 * * *"
+
+# Email pick reminders once a day at 13:00 UTC (9am ET) listing each user's unpicked
+# matches that kick off within the next 24 hours. Skips users who are fully caught up.
+[functions."send-reminders"]
+  schedule = "0 13 * * *"

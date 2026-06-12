@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Save, Trash2 } from 'lucide-react';
-import { adminDeletePick, adminSetPick, getPicksForMatch, getProfiles } from '../api.js';
+import { RefreshCw, Save, Trash2, Plus, Sparkles } from 'lucide-react';
+import { adminDeleteBonusQuestion, adminDeletePick, adminSaveBonusQuestion, adminSetPick, getPicksForMatch, getProfiles } from '../api.js';
 import { fmtKickoff } from '../lib/format.js';
 
 export default function Admin({ state, onSaveRounds, onSyncScores }) {
@@ -96,8 +96,150 @@ export default function Admin({ state, onSaveRounds, onSyncScores }) {
       </section>
 
       <ManagePicks matches={state?.matches || []} />
+      <ManageBonus questions={state?.bonusQuestions || []} />
     </section>
   );
+}
+
+function ManageBonus({ questions }) {
+  const [drafts, setDrafts] = useState({}); // id -> partial overrides
+  const [newQ, setNewQ] = useState({ id: '', prompt: '', points: 5, lockAt: '2026-06-27T00:00', options: '', correctAnswer: '', displayOrder: 100 });
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [ok, setOk] = useState('');
+
+  const onChange = (id, field, value) => {
+    setDrafts((d) => ({ ...d, [id]: { ...d[id], [field]: value } }));
+  };
+
+  const saveOne = async (q) => {
+    setBusy(q.id); setError(''); setOk('');
+    const patch = drafts[q.id] || {};
+    const next = {
+      id: q.id,
+      prompt: patch.prompt ?? q.prompt,
+      options: 'options' in patch ? parseOptions(patch.options) : q.options,
+      points: patch.points ?? q.points,
+      lockAt: patch.lockAt != null ? toIso(patch.lockAt) : q.lockAt,
+      correctAnswer: patch.correctAnswer ?? q.correctAnswer ?? '',
+      displayOrder: patch.displayOrder ?? q.displayOrder,
+    };
+    try {
+      await adminSaveBonusQuestion(next);
+      setOk(`Saved: ${next.prompt}`);
+      setDrafts((d) => { const c = { ...d }; delete c[q.id]; return c; });
+    } catch (e) { setError(e.message); } finally { setBusy(''); }
+  };
+
+  const removeOne = async (q) => {
+    if (!window.confirm(`Delete "${q.prompt}" and all answers to it?`)) return;
+    setBusy(q.id); setError(''); setOk('');
+    try { await adminDeleteBonusQuestion(q.id); setOk('Deleted.'); }
+    catch (e) { setError(e.message); } finally { setBusy(''); }
+  };
+
+  const addNew = async () => {
+    const id = newQ.id.trim();
+    if (!id) { setError('ID is required (e.g. "winner").'); return; }
+    if (!newQ.prompt.trim()) { setError('Prompt is required.'); return; }
+    setBusy('new'); setError(''); setOk('');
+    try {
+      await adminSaveBonusQuestion({
+        id,
+        prompt: newQ.prompt.trim(),
+        options: parseOptions(newQ.options),
+        points: Number(newQ.points) || 0,
+        lockAt: toIso(newQ.lockAt),
+        correctAnswer: newQ.correctAnswer.trim() || null,
+        displayOrder: Number(newQ.displayOrder) || 0,
+      });
+      setOk('Question added.');
+      setNewQ({ id: '', prompt: '', points: 5, lockAt: '2026-06-27T00:00', options: '', correctAnswer: '', displayOrder: 100 });
+    } catch (e) { setError(e.message); } finally { setBusy(''); }
+  };
+
+  return (
+    <section className="admin-panel">
+      <div className="round-head">
+        <h3><Sparkles size={18} style={{ verticalAlign: '-3px', marginRight: 4 }} /> Bonus questions</h3>
+        <span className="muted">Lock locks editing for players. Set "Correct" after the tournament to award points.</span>
+      </div>
+
+      {error && <div className="notice error">{error}</div>}
+      {ok && <div className="notice ok">{ok}</div>}
+
+      <div className="table-shell">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Prompt</th>
+              <th>Options (comma-sep, blank = free text)</th>
+              <th>Points</th>
+              <th>Lock at (UTC)</th>
+              <th>Correct</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {questions.map((q) => {
+              const patch = drafts[q.id] || {};
+              const opts = 'options' in patch ? patch.options : (q.options ? q.options.join(', ') : '');
+              return (
+                <tr key={q.id}>
+                  <td><strong>{q.id}</strong></td>
+                  <td><input value={patch.prompt ?? q.prompt} onChange={(e) => onChange(q.id, 'prompt', e.target.value)} /></td>
+                  <td><input value={opts} placeholder="Argentina, Brazil, France..." onChange={(e) => onChange(q.id, 'options', e.target.value)} /></td>
+                  <td style={{ width: 80 }}><input type="number" min="0" value={patch.points ?? q.points} onChange={(e) => onChange(q.id, 'points', e.target.value)} /></td>
+                  <td style={{ width: 180 }}><input type="datetime-local" value={patch.lockAt ?? fromIso(q.lockAt)} onChange={(e) => onChange(q.id, 'lockAt', e.target.value)} /></td>
+                  <td><input value={patch.correctAnswer ?? q.correctAnswer ?? ''} placeholder="Set after tournament" onChange={(e) => onChange(q.id, 'correctAnswer', e.target.value)} /></td>
+                  <td style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" disabled={busy === q.id} onClick={() => saveOne(q)} title="Save"><Save size={15} /></button>
+                    <button type="button" disabled={busy === q.id} onClick={() => removeOne(q)} title="Delete"><Trash2 size={15} /></button>
+                  </td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td><input value={newQ.id} placeholder="e.g. winner" onChange={(e) => setNewQ({ ...newQ, id: e.target.value })} /></td>
+              <td><input value={newQ.prompt} placeholder="Who will win the World Cup?" onChange={(e) => setNewQ({ ...newQ, prompt: e.target.value })} /></td>
+              <td><input value={newQ.options} placeholder="(optional)" onChange={(e) => setNewQ({ ...newQ, options: e.target.value })} /></td>
+              <td><input type="number" min="0" value={newQ.points} onChange={(e) => setNewQ({ ...newQ, points: e.target.value })} /></td>
+              <td><input type="datetime-local" value={newQ.lockAt} onChange={(e) => setNewQ({ ...newQ, lockAt: e.target.value })} /></td>
+              <td><input value={newQ.correctAnswer} placeholder="(blank)" onChange={(e) => setNewQ({ ...newQ, correctAnswer: e.target.value })} /></td>
+              <td>
+                <button type="button" disabled={busy === 'new'} className="primary action-button" onClick={addNew}>
+                  <Plus size={15} /> Add
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function parseOptions(text) {
+  if (text == null) return null;
+  const trimmed = String(text).trim();
+  if (!trimmed) return null;
+  return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function toIso(localValue) {
+  if (!localValue) return null;
+  // datetime-local gives 'YYYY-MM-DDTHH:mm' in the user's local zone; we store UTC.
+  const d = new Date(localValue);
+  return d.toISOString();
+}
+
+function fromIso(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
 function ManagePicks({ matches }) {
