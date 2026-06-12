@@ -233,7 +233,10 @@ group by m.id;
 grant select on public.match_pick_counts to authenticated;
 
 -- =============== LEADERBOARD VIEW (picks + bonus combined) ===============
-create or replace view public.leaderboard as
+-- Drop first so column types can change on re-runs (Postgres rejects CREATE OR REPLACE
+-- when a column's type would differ).
+drop view if exists public.leaderboard;
+create view public.leaderboard as
 with pick_totals as (
   select
     p.id as user_id,
