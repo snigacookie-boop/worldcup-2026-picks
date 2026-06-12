@@ -34,7 +34,6 @@ export default function Layout({ state, loading, rank, onRefresh, onSignOut, chi
             <div><span>{myRow?.points ?? 0}</span><small>Points</small></div>
             <div><span>{rank || '-'}</span><small>Rank</small></div>
             <div><span>{state?.totals?.open ?? 0}</span><small>Open</small></div>
-            <div><span>{state?.totals?.live ?? 0}</span><small>Live</small></div>
           </div>
         </section>
 
