@@ -142,6 +142,45 @@ export async function saveRoundPoints(rounds) {
   return fetchState();
 }
 
+// Admin: list every profile (id + username) for the pick-correction table.
+export async function getProfiles() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username')
+    .order('username');
+  if (error) throw error;
+  return (data || []).map((p) => ({ userId: p.id, username: p.username }));
+}
+
+// Admin: every pick for a given match, keyed by userId.
+export async function getPicksForMatch(matchId) {
+  const { data, error } = await supabase
+    .from('picks')
+    .select('user_id, pick')
+    .eq('match_id', matchId);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((p) => [p.user_id, p.pick]));
+}
+
+// Admin override: upsert a pick on behalf of any user. Bypasses kickoff lock via picks_admin_write RLS.
+export async function adminSetPick(userId, matchId, pick) {
+  const { error } = await supabase.from('picks').upsert(
+    { user_id: userId, match_id: matchId, pick, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,match_id' },
+  );
+  if (error) throw error;
+}
+
+// Admin override: remove a pick on behalf of any user.
+export async function adminDeletePick(userId, matchId) {
+  const { error } = await supabase
+    .from('picks')
+    .delete()
+    .eq('user_id', userId)
+    .eq('match_id', matchId);
+  if (error) throw error;
+}
+
 export async function syncScores() {
   const res = await fetch('/.netlify/functions/sync-scores', { method: 'POST' });
   const payload = await res.json().catch(() => ({}));

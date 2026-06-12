@@ -154,6 +154,13 @@ create policy "picks_self_delete" on public.picks for delete
     and exists (select 1 from public.matches m where m.id = match_id and m.kickoff > now())
   );
 
+-- Admin override: admins can write any pick at any time (for dispute resolution / corrections).
+-- Multiple permissive policies OR together, so this adds an admin-only path on top of the user-self path.
+drop policy if exists "picks_admin_write" on public.picks;
+create policy "picks_admin_write" on public.picks for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
 -- =============== LEADERBOARD VIEW ===============
 create or replace view public.leaderboard as
 select

@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import { RefreshCw, Save } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw, Save, Trash2 } from 'lucide-react';
+import { adminDeletePick, adminSetPick, getPicksForMatch, getProfiles } from '../api.js';
+import { fmtKickoff } from '../lib/format.js';
 
 export default function Admin({ state, onSaveRounds, onSyncScores }) {
   const [drafts, setDrafts] = useState([]);
@@ -92,6 +94,163 @@ export default function Admin({ state, onSaveRounds, onSyncScores }) {
           </table>
         </div>
       </section>
+
+      <ManagePicks matches={state?.matches || []} />
+    </section>
+  );
+}
+
+function ManagePicks({ matches }) {
+  const sorted = useMemo(
+    () => [...matches].sort((a, b) => new Date(b.kickoff) - new Date(a.kickoff)),
+    [matches],
+  );
+  const [matchId, setMatchId] = useState('');
+  const [profiles, setProfiles] = useState([]);
+  const [picks, setPicks] = useState({}); // userId -> 'HOME'|'AWAY'|'DRAW'
+  const [busyUser, setBusyUser] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [ok, setOk] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    getProfiles().then((rows) => { if (!cancelled) setProfiles(rows); }).catch((e) => setError(e.message));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!matchId) { setPicks({}); return; }
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    getPicksForMatch(matchId)
+      .then((rows) => { if (!cancelled) setPicks(rows); })
+      .catch((e) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [matchId]);
+
+  const setPick = async (userId, next) => {
+    setBusyUser(userId);
+    setError(''); setOk('');
+    const prev = picks[userId];
+    setPicks((p) => ({ ...p, [userId]: next }));
+    try {
+      await adminSetPick(userId, matchId, next);
+      setOk('Pick updated.');
+    } catch (e) {
+      setPicks((p) => ({ ...p, [userId]: prev }));
+      setError(e.message);
+    } finally {
+      setBusyUser('');
+    }
+  };
+
+  const removePick = async (userId) => {
+    setBusyUser(userId);
+    setError(''); setOk('');
+    const prev = picks[userId];
+    setPicks((p) => { const copy = { ...p }; delete copy[userId]; return copy; });
+    try {
+      await adminDeletePick(userId, matchId);
+      setOk('Pick removed.');
+    } catch (e) {
+      setPicks((p) => ({ ...p, [userId]: prev }));
+      setError(e.message);
+    } finally {
+      setBusyUser('');
+    }
+  };
+
+  const selectedMatch = sorted.find((m) => m.id === matchId);
+
+  return (
+    <section className="admin-panel">
+      <div className="round-head">
+        <h3>Manage picks</h3>
+        <span className="muted">Override or clear picks for any user, any match.</span>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label>
+          Match
+          <select value={matchId} onChange={(e) => setMatchId(e.target.value)}>
+            <option value="">— Choose a match —</option>
+            {sorted.map((m) => (
+              <option key={m.id} value={m.id}>
+                {fmtKickoff(m.kickoff)} · {m.homeTeam} vs {m.awayTeam}
+                {m.status === 'FINISHED' && m.winner ? ` (won: ${m.winner})` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {error && <div className="notice error">{error}</div>}
+      {ok && <div className="notice ok">{ok}</div>}
+
+      {matchId && (
+        <div className="table-shell">
+          {loading ? (
+            <p className="muted">Loading picks…</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Current</th>
+                  <th>Set to</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((p) => {
+                  const current = picks[p.userId] || null;
+                  const correct = selectedMatch?.winner && current === selectedMatch.winner;
+                  return (
+                    <tr key={p.userId}>
+                      <td><strong>{p.username}</strong></td>
+                      <td>
+                        {current ? (
+                          <span className={correct ? 'ok' : ''}>{current}</span>
+                        ) : <span className="muted">—</span>}
+                      </td>
+                      <td>
+                        <div className="pick-options" style={{ display: 'inline-grid', gridTemplateColumns: 'repeat(3, 56px)', gap: 4 }}>
+                          {['HOME', 'DRAW', 'AWAY'].map((opt) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              disabled={busyUser === p.userId}
+                              className={current === opt ? 'selected' : ''}
+                              onClick={() => setPick(p.userId, opt)}
+                            >
+                              {opt[0]}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        {current && (
+                          <button
+                            type="button"
+                            disabled={busyUser === p.userId}
+                            onClick={() => removePick(p.userId)}
+                            title="Clear this user's pick"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </section>
   );
 }
